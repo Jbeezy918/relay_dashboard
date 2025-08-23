@@ -1,0 +1,54 @@
+# Guard Permissions Configuration
+# Defines what each agent can do and where they can access
+
+default_settings:
+  allowed_operations: ["read", "write"]  # No network/exec unless explicitly granted
+  allowed_roots:
+    - "~/Documents/Updated_Relay_Files"
+    - "~/Documents/AI_Relay_Files" 
+    - "~/Documents/demo_agent"
+    - "~/Desktop"
+    - "~/spark_driver_tracker"
+  denied_roots:
+    - "~/Library"  # Private app data
+    - "/System"
+    - "/bin"
+    - "/sbin" 
+    - "/usr"
+    - "/etc"
+    - "/var"
+  allowed_domains: []  # Empty means no network access
+  
+agents:
+  Jenny:
+    allowed_operations: ["read", "write", "network"]
+    allowed_domains:
+      - "api.openai.com"
+      - "api.anthropic.com"
+      - "api.elevenlabs.io"
+    description: "Primary AI assistant with API access"
+    
+  Luna:
+    allowed_operations: ["read", "write", "network"]  
+    allowed_domains:
+      - "api.openai.com"
+      - "api.anthropic.com"
+      - "generativelanguage.googleapis.com"
+    description: "Secondary AI assistant with broader model access"
+    
+  Claude:
+    allowed_operations: ["read", "write"]
+    allowed_domains: []
+    description: "Local-only agent, no network access"
+    
+  Demo:
+    allowed_operations: ["read"]
+    allowed_roots:
+      - "~/Documents/demo_agent"
+    description: "Demo agent with restricted read-only access"
+
+logging:
+  audit_file: "guardian_audit.log"
+  permission_denies_file: "permission_denies.log"
+  log_level: "INFO"
+  include_timestamps: true

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# Virtual env
+.venv/
+
+# OS / Editors / Logs
+.DS_Store
+*.log
+
+# App data
+.streamlit/
+.env
+.env.*
+*.db
+tasks.db

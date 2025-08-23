@@ -1,0 +1,325 @@
+diff --git a/app.py b/app.py
+index old..new 100644
+--- a/app.py
++++ b/app.py
+@@ -867,20 +867,62 @@ def seconds_left(token: str) -> int:
+ # Keyring + environment  
+ # =========================
+-def get_secret(name: str) -> str:
+-    if KEYRING:
+-        v = keyring.get_password("JennyLunaVault", name)
+-        if v: return v
+-    return os.getenv(name, "")
++# =========================
++# API Keys - ONLY from env/.env (separate from Guard tokens)
++# =========================
+ 
+-# Collect all environment values
+-env_vals = {}
+-for k in ["OPENAI_API_KEY","ANTHROPIC_API_KEY","GEMINI_API_KEY","ELEVENLABS_API_KEY","ELEVENLABS_VOICE_ID"]:
+-    v = get_secret(k)
+-    if v: env_vals[k] = v
++def load_api_keys_from_env():
++    """Load API keys ONLY from environment/dotenv - never from Guard system."""
++    api_keys = {}
++    
++    # Try .env file first, then environment variables
++    for key_name in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"]:
++        value = os.getenv(key_name, "")
++        if value:
++            api_keys[key_name] = value
++    
++    return api_keys
++
++def mask_api_key(key: str) -> str:
++    """Mask API key for logging - show only first 2 and last 4 chars."""
++    if not key or len(key) < 8:
++        return "****"
++    return f"{key[:2]}****{key[-4:]}"
++
++def get_api_status() -> dict:
++    """Get status of all API providers."""
++    return {
++        "openai": bool(OPENAI_KEY),
++        "anthropic": bool(ANTHROPIC_KEY), 
++        "gemini": bool(GEMINI_KEY),
++        "elevenlabs": bool(ELEVEN_KEY)
++    }
++
++def get_guard_token_status() -> dict:
++    """Get status of Guard tokens for each agent."""
++    available_agents = list_agents() or ["Jenny", "Luna", "Claude"]
++    status = {}
++    
++    for agent in available_agents:
++        try:
++            active_tokens = list_active_tokens(agent=agent)
++            if active_tokens:
++                # Check if any token is still valid
++                valid_token = False
++                for token in active_tokens:
++                    try:
++                        if check_token(token, needed_scope="read", expected_agent=agent):
++                            valid_token = True
++                            break
++                    except:
++                        continue
++                status[agent.lower()] = valid_token
++            else:
++                status[agent.lower()] = False
++        except Exception:
++            status[agent.lower()] = False
++    
++    return status
+ 
+-# =========================
+-# API Keys from keyring/env
+-# =========================
++# Load API keys from environment only
++env_vals = load_api_keys_from_env()
++
+ OPENAI_KEY = env_vals.get("OPENAI_API_KEY")
+-ANTHROPIC_KEY = env_vals.get("ANTHROPIC_API_KEY")
++ANTHROPIC_KEY = env_vals.get("ANTHROPIC_API_KEY") 
+ GEMINI_KEY = env_vals.get("GEMINI_API_KEY")
+ ELEVEN_KEY = env_vals.get("ELEVENLABS_API_KEY")
+@@ -684,6 +726,30 @@ main_tab, agents_tab, files_tab = st.tabs(["📊 Dashboard", "🧑‍🚀 Agents"
+ 
+ with main_tab:
++    # =========================
++    # STATUS ROW - API Keys vs Guard Tokens
++    # =========================
++    st.markdown("### 📊 System Status")
++    
++    status_cols = st.columns(2)
++    
++    with status_cols[0]:
++        st.markdown("**🔑 Model Access (API Keys)**")
++        api_status = get_api_status()
++        
++        for provider, has_key in api_status.items():
++            if provider == "elevenlabs":  # Skip TTS for model access
++                continue
++            icon = "✅" if has_key else "❌"
++            if not has_key:
++                st.markdown(f"{icon} {provider.title()}: Missing API key for {provider}")
++            else:
++                masked_key = mask_api_key(globals()[f"{provider.upper()}_KEY"])
++                st.markdown(f"{icon} {provider.title()}: {masked_key}")
++    
++    with status_cols[1]:
++        st.markdown("**🛡️ Agent Access (Guard Tokens)**")
++        guard_status = get_guard_token_status()
++        
++        for agent, has_valid_token in guard_status.items():
++            icon = "✅" if has_valid_token else "❌"
++            if not has_valid_token:
++                st.markdown(f"{icon} {agent.title()}: Missing/expired GUARD TOKEN for {agent}")
++            else:
++                st.markdown(f"{icon} {agent.title()}: Valid Guard token")
++    
++    st.divider()
++    
+     st.subheader("💬 Conversation")
+@@ -559,7 +601,13 @@ with st.sidebar:
+ 
+     # --- Helpers ---
+     def _ensure_token(agent: str, ttl=120):
++        """Ensure agent has valid Guard token - separate from API keys."""
+         tok = st.session_state.agent_tokens.get(agent)
+         if not tok:
+-            tok, _ = issue_token(agent=agent, scopes=["read","write","list"], ttl_minutes=ttl)
+-            st.session_state.agent_tokens[agent] = tok
++            try:
++                tok, _ = issue_token(agent=agent, scopes=["read","write","list"], ttl_minutes=ttl)
++                st.session_state.agent_tokens[agent] = tok
++            except Exception as e:
++                # This is a Guard token issue, not an API key issue
++                add_error(f"Failed to issue GUARD TOKEN for {agent}: {e}")
++                return None
+         return tok
+@@ -1063,7 +1111,13 @@ async def fan_out_and_reply_async(user_text: str) -> dict:
+ 
+     if not tasks:
+-        return {"Info": "(No models enabled, keys missing, or agents not selected)"}
++        missing_apis = []
++        if not OPENAI_KEY: missing_apis.append("OpenAI API key")
++        if not ANTHROPIC_KEY: missing_apis.append("Anthropic API key")
++        if not GEMINI_KEY: missing_apis.append("Gemini API key")
++        
++        if missing_apis:
++            return {"Error": f"Missing API keys: {', '.join(missing_apis)}"}
++        else:
++            return {"Info": "No agents selected for conversation"}
+
+diff --git a/agent_fs_guard.py b/agent_fs_guard.py
+index old..new 100644
+--- a/agent_fs_guard.py
++++ b/agent_fs_guard.py
+@@ -10,7 +10,7 @@ Simple audit log of every checked action.
+ 
+ Usage:
+-    from agent_fs_guard import Guard
++    from agent_fs_guard import Guard, GuardTokenError
+     guard = Guard(agent="Jenny")
+     if guard.can_read("/path/file.txt"): ...
+     data = guard.read_text("/path/file.txt")
+@@ -25,6 +25,16 @@ from typing import Iterable, Dict, Any
+ from urllib.parse import urlparse
+ 
++# =========================
++# Custom Exceptions
++# =========================
++
++class GuardTokenError(Exception):
++    """Raised when Guard token is missing, invalid, or expired."""
++    pass
++
++class GuardPermissionError(Exception):
++    """Raised when Guard denies permission for an operation."""  
++    pass
++
+ # ---- Policy ----
+
+diff --git a/permissions.yaml b/permissions.yaml
+index old..new 100644
+--- a/permissions.yaml
++++ b/permissions.yaml
+@@ -1,11 +1,54 @@
++# Guard Permissions Configuration
++# Defines what each agent can do and where they can access
++
++default_settings:
++  allowed_operations: ["read", "write"]  # No network/exec unless explicitly granted
++  allowed_roots:
++    - "~/Documents/Updated_Relay_Files"
++    - "~/Documents/AI_Relay_Files" 
++    - "~/Documents/demo_agent"
++    - "~/Desktop"
++    - "~/spark_driver_tracker"
++  denied_roots:
++    - "~/Library"  # Private app data
++    - "/System"
++    - "/bin"
++    - "/sbin" 
++    - "/usr"
++    - "/etc"
++    - "/var"
++  allowed_domains: []  # Empty means no network access
++  
+ agents:
+-  Jenny: [read_files, write_files, web, email, calendar]
+-  Luna:  [web, social, read_files]
+-
+-rules:
+-  - task: "build_*"
+-    requires: [read_files, write_files]
+-  - task: "send_email*"
+-    requires: [email]
+-  - task: "post_social*"
+-    requires: [social]
++  Jenny:
++    allowed_operations: ["read", "write", "network"]
++    allowed_domains:
++      - "api.openai.com"
++      - "api.anthropic.com"
++      - "api.elevenlabs.io"
++    description: "Primary AI assistant with API access"
++    
++  Luna:
++    allowed_operations: ["read", "write", "network"]  
++    allowed_domains:
++      - "api.openai.com"
++      - "api.anthropic.com"
++      - "generativelanguage.googleapis.com"
++    description: "Secondary AI assistant with broader model access"
++    
++  Claude:
++    allowed_operations: ["read", "write"]
++    allowed_domains: []
++    description: "Local-only agent, no network access"
++    
++  Demo:
++    allowed_operations: ["read"]
++    allowed_roots:
++      - "~/Documents/demo_agent"
++    description: "Demo agent with restricted read-only access"
+
++logging:
++  audit_file: "guardian_audit.log"
++  permission_denies_file: "permission_denies.log"
++  log_level: "INFO"
++  include_timestamps: true
+
+diff --git a/guard.py b/guard.py
+new file mode 100644
+index 0000000..new
+--- /dev/null
++++ b/guard.py
+@@ -0,0 +1,58 @@
++#!/usr/bin/env python3
++"""
++guard.py
++Permission handler that logs denials to permission_denies.log
++Never mentions API keys - only Guard token issues.
++"""
++
++import os, time, yaml
++from pathlib import Path
++from datetime import datetime
++from typing import Dict, Any
++
++# Load permissions configuration
++PERMISSIONS_FILE = Path(__file__).parent / "permissions.yaml"
++PERMISSION_DENIES_LOG = Path(__file__).parent / "permission_denies.log"
++
++class PermissionGuard:
++    def __init__(self):
++        self.config = self._load_config()
++    
++    def _load_config(self) -> Dict[str, Any]:
++        """Load permissions from YAML file."""
++        try:
++            with open(PERMISSIONS_FILE, 'r') as f:
++                return yaml.safe_load(f)
++        except Exception as e:
++            # Fallback to basic config
++            return {
++                'agents': {
++                    'Jenny': {'allowed_operations': ['read', 'write', 'network']},
++                    'Luna': {'allowed_operations': ['read', 'write', 'network']},
++                    'Claude': {'allowed_operations': ['read', 'write']}
++                }
++            }
++    
++    def check_permission(self, agent: str, operation: str, resource: str = "") -> bool:
++        """Check if agent has permission for operation."""
++        agent_config = self.config.get('agents', {}).get(agent)
++        if not agent_config:
++            self._log_denial(agent, operation, resource, "Agent not found in permissions")
++            return False
++            
++        allowed_ops = agent_config.get('allowed_operations', [])
++        if operation not in allowed_ops:
++            self._log_denial(agent, operation, resource, f"Operation '{operation}' not allowed")
++            return False
++            
++        return True
++    
++    def _log_denial(self, agent: str, operation: str, resource: str, reason: str):
++        """Log permission denial - never mentions API keys."""
++        timestamp = datetime.now().isoformat()
++        log_entry = f"[{timestamp}] DENIED: Agent={agent} Operation={operation} Resource={resource} Reason={reason}\\n"
++        
++        try:
++            with open(PERMISSION_DENIES_LOG, 'a') as f:
++                f.write(log_entry)
++        except Exception:
++            pass  # Don't fail if logging fails
++
++# Global instance
++guard = PermissionGuard()
++
++def check_agent_permission(agent: str, operation: str, resource: str = "") -> bool:
++    """Global function to check permissions."""
++    return guard.check_permission(agent, operation, resource)
