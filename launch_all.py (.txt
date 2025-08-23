@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+# One-shot launcher: cleans Claude auth, loads API keys, sanity-checks, starts dashboard.
+import subprocess, sys, os, textwrap
+
+ZSH = r'''
+set -e
+
+echo "🧹  Resetting Claude token state…"
+claude /logout >/dev/null 2>&1 || true
+
+echo "🔑  Loading API keys…"
+if [ -f ~/api_keys_secure/load_keys.sh ]; then
+  # shellcheck disable=SC1090
+  source ~/api_keys_secure/load_keys.sh
+else
+  echo "❌ ~/api_keys_secure/load_keys.sh not found"; exit 1
+fi
+
+# Normalize & strip sneaky whitespace
+export OPENAI_API_KEY="$(printf '%s' "$OPENAI_API_KEY" | tr -d '\r\n\t \"')"
+export ANTHROPIC_API_KEY="$(printf '%s' "$ANTHROPIC_API_KEY" | tr -d '\r\n\t \"')"
+export GEMINI_API_KEY="$(printf '%s' "$GEMINI_API_KEY" | tr -d '\r\n\t \"')"
+
+echo "✅  Keys: OPENAI=${OPENAI_API_KEY:+SET}  ANTH=${ANTHROPIC_API_KEY:+SET}  GEM=${GEMINI_API_KEY:+SET}"
+
+echo "🔎  Quick OpenAI check… (expect HTTP/1.1 200)"
+curl -sS -D /tmp/oa.h -o /tmp/oa.json https://api.openai.com/v1/models \
+  -H "Authorization: Bearer $OPENAI_API_KEY" >/dev/null || true
+head -n1 /tmp/oa.h || true
+
+echo "🚀  Launching Relay Dashboard…"
+cd ~/Documents/Updated_Relay_Files
+exec streamlit run app.py
+'''
+
+def main():
+    try:
+        subprocess.run(['/bin/zsh','-lc', ZSH], check=True)
+    except subprocess.CalledProcessError as e:
+        print("Launcher failed. See output above.", file=sys.stderr)
+        sys.exit(e.returncode)
+
+if __name__ == "__main__":
+    main()
