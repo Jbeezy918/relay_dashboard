@@ -6,10 +6,11 @@
 # - Provider-specific model dropdowns with pricing
 # - Clean, bold styling
 
-import os, re, json, time, shlex, subprocess, typing, requests
+import os, re, json, time, shlex, subprocess, typing, requests, threading, fcntl
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 def _safe_dt(s):
     try:
@@ -3700,6 +3701,186 @@ def init_ops_suite():
     return out
 
 # =========================
+# AGENT COMMUNICATION SYSTEM
+# =========================
+
+def log_event(msg_dict):
+    """Thread-safe JSONL logging for agent communications"""
+    log_path = Path("agent_comm/relay_log.jsonl")
+    log_path.parent.mkdir(exist_ok=True)
+    
+    # Ensure timestamp
+    if "ts" not in msg_dict:
+        msg_dict["ts"] = datetime.now(timezone.utc).isoformat()
+    
+    try:
+        with open(log_path, 'a') as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            f.write(json.dumps(msg_dict) + '\n')
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except Exception as e:
+        st.error(f"Failed to log event: {e}")
+
+def load_comm_log():
+    """Load agent communication log"""
+    log_path = Path("agent_comm/relay_log.jsonl")
+    if not log_path.exists():
+        return []
+    
+    messages = []
+    try:
+        with open(log_path, 'r') as f:
+            for line in f:
+                if line.strip():
+                    messages.append(json.loads(line))
+    except Exception as e:
+        st.error(f"Failed to load comm log: {e}")
+    
+    return messages
+
+def render_live_comms():
+    """Render the Live Comms panel in Streamlit"""
+    st.subheader("📡 Live Agent Communications")
+    
+    # Auto-refresh every 2 seconds
+    st_autorefresh(interval=2000, key="comms_refresh")
+    
+    # Filters
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        agent_filter = st.selectbox("Agent", ["All"] + list(AGENT_REGISTRY.keys()))
+    with col2:
+        type_filter = st.selectbox("Type", ["All", "proposal", "comment", "approval", "decision", "status"])
+    with col3:
+        risk_filter = st.selectbox("Risk", ["All", "low", "high"])
+    
+    search_term = st.text_input("Search messages", placeholder="Search content...")
+    
+    # Load and filter messages
+    messages = load_comm_log()
+    filtered_messages = []
+    
+    for msg in messages:
+        # Apply filters
+        if agent_filter != "All" and msg.get("sender") != agent_filter:
+            continue
+        if type_filter != "All" and msg.get("type") != type_filter:
+            continue
+        if risk_filter != "All" and msg.get("risk") != risk_filter:
+            continue
+        if search_term and search_term.lower() not in msg.get("content", "").lower():
+            continue
+        
+        filtered_messages.append(msg)
+    
+    # Sort by timestamp (newest first)
+    filtered_messages.sort(key=lambda x: x.get("ts", ""), reverse=True)
+    
+    # Display messages
+    for msg in filtered_messages[:20]:  # Show latest 20
+        timestamp = msg.get("ts", "")[:19].replace("T", " ")
+        sender = msg.get("sender", "Unknown")
+        msg_type = msg.get("type", "status")
+        risk = msg.get("risk", "low")
+        status = msg.get("status", "open")
+        content = msg.get("content", "")
+        topic = msg.get("topic", "General")
+        
+        # Color coding
+        if msg_type == "proposal":
+            color = "🔵"
+        elif msg_type == "approval":
+            color = "✅"
+        elif msg_type == "decision":
+            color = "🎯"
+        elif msg_type == "comment":
+            color = "💬"
+        else:
+            color = "ℹ️"
+        
+        # Risk badge
+        risk_badge = "🔴 HIGH" if risk == "high" else "🟢 LOW"
+        
+        # Status badge
+        if status == "approved":
+            status_badge = "✅ APPROVED"
+        elif status == "rejected":
+            status_badge = "❌ REJECTED"
+        else:
+            status_badge = "⏳ OPEN"
+        
+        # Check for consensus on high-risk items
+        consensus_badge = ""
+        if risk == "high" and msg.get("approvers"):
+            approver_count = len([a for a in msg.get("approvers", []) if a])
+            if approver_count >= 2:
+                consensus_badge = "🏆 CONSENSUS ACHIEVED"
+        
+        with st.expander(f"{color} {sender} → {topic} ({timestamp})", expanded=False):
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                st.write(f"**Content:** {content}")
+            with col2:
+                st.write(f"**Risk:** {risk_badge}")
+                st.write(f"**Status:** {status_badge}")
+            with col3:
+                if msg.get("approvers"):
+                    st.write(f"**Approvers:** {', '.join(msg.get('approvers', []))}")
+                if consensus_badge:
+                    st.success(consensus_badge)
+
+def start_spark_marketing_workflow():
+    """Initialize Spark marketing workflow with agent proposals"""
+    
+    # Jenny proposes email blast
+    log_event({
+        "sender": "Jenny",
+        "recipients": ["Lexi", "Bob"],
+        "type": "proposal",
+        "topic": "Spark Launch", 
+        "content": "Proposing email blast campaign for Spark Driver Tracker launch. Includes hero copy, pricing tiers, and user testimonials.",
+        "risk": "low",
+        "approvers": [],
+        "status": "open"
+    })
+    
+    # Lexi proposes social media campaign
+    log_event({
+        "sender": "Lexi",
+        "recipients": ["Jenny", "Luna"],
+        "type": "proposal",
+        "topic": "Spark Launch",
+        "content": "7-day social media launch campaign across all platforms. Includes demo videos and user-generated content strategy.",
+        "risk": "high",
+        "approvers": [],
+        "status": "open"
+    })
+    
+    # Demo raises security concerns
+    log_event({
+        "sender": "Demo",
+        "recipients": ["Bob", "Ava"],
+        "type": "comment",
+        "topic": "Spark Launch",
+        "content": "Security review of marketing claims needed. Verify all data protection and privacy statements are accurate.",
+        "risk": "high",
+        "approvers": [],
+        "status": "open"
+    })
+    
+    # Bob approves technical assets
+    log_event({
+        "sender": "Bob",
+        "recipients": ["Jenny", "Lexi"],
+        "type": "approval",
+        "topic": "Spark Launch",
+        "content": "Technical review complete. Landing page and demo script approved for accuracy.",
+        "risk": "low",
+        "approvers": ["Bob"],
+        "status": "approved"
+    })
+
+# =========================
 # MAIN UI
 # =========================
 
@@ -3776,6 +3957,31 @@ def main():
             st.write(f"**Capabilities:** {', '.join(agent_info['core_capabilities'])}")
             st.write(f"**Permission Level:** {agent_info['permissions_level']}")
             st.write(f"**Status:** {agent_info['status']}")
+    
+    # Spark Marketing Workflow Controls
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🚀 Start Spark Marketing Workflow"):
+            start_spark_marketing_workflow()
+            st.success("Marketing workflow initiated! Check Live Comms below.")
+    with col2:
+        if st.button("📊 Test High-Risk Proposal"):
+            log_event({
+                "sender": "Demo",
+                "recipients": ["Bob", "Ava"],
+                "type": "proposal", 
+                "topic": "Spark Launch",
+                "content": "PROPOSAL: Increase Spark pricing to $15/month for Pro tier. Market research shows competitive pricing supports this.",
+                "risk": "high",
+                "approvers": [],
+                "status": "open"
+            })
+            st.info("High-risk proposal submitted for consensus approval")
+    
+    # Live Communications Panel
+    st.markdown("---")
+    render_live_comms()
 
 if __name__ == "__main__":
     main()
