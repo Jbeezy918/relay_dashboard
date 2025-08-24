@@ -3698,3 +3698,84 @@ def init_ops_suite():
     if st.session_state.get("cloud_dashboard_enabled"):
         out.append(sync_conversations_to_cloud())
     return out
+
+# =========================
+# MAIN UI
+# =========================
+
+def main():
+    """Main Streamlit UI"""
+    st.set_page_config(
+        page_title="Relay Dashboard",
+        page_icon="🚀",
+        layout="wide"
+    )
+    
+    st.title("🚀 Relay Dashboard")
+    st.markdown("**Multi-Agent AI Communication Hub**")
+    
+    # Sidebar with demo controls
+    with st.sidebar:
+        st.header("🛠️ Controls")
+        
+        # Demo section
+        st.subheader("📋 Demos")
+        if st.button("🚀 Run Hello Demo", help="Launch the hello_streamlit.py demo"):
+            # Launch demo in subprocess
+            import subprocess
+            import sys
+            demo_path = "examples/hello_streamlit.py"
+            if os.path.exists(demo_path):
+                try:
+                    subprocess.Popen([sys.executable, "-m", "streamlit", "run", demo_path, "--server.port", "8504"])
+                    st.success("✅ Demo launched on port 8504!")
+                    st.info("Visit: http://localhost:8504")
+                except Exception as e:
+                    st.error(f"❌ Failed to launch demo: {e}")
+            else:
+                st.error("❌ Demo file not found")
+        
+        # Agent status
+        st.subheader("🤖 Agents")
+        for agent_name, agent_info in AGENT_REGISTRY.items():
+            status_emoji = "🟢" if agent_info["status"] == "registered" else "🔴"
+            st.write(f"{status_emoji} {agent_info['profile_image']} {agent_name}")
+    
+    # Main content area
+    st.subheader("📊 System Status")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Active Agents", len(AGENT_REGISTRY))
+    
+    with col2:
+        # Check if app is properly initialized
+        ops_status = "✅ Ready" if st.session_state.get("ops_suite_initialized") else "⚠️ Initializing"
+        st.metric("Operations Suite", ops_status)
+    
+    with col3:
+        # Count environment variables
+        env_keys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY"]
+        configured_keys = sum(1 for key in env_keys if os.getenv(key))
+        st.metric("API Keys", f"{configured_keys}/{len(env_keys)}")
+    
+    # Initialize ops suite if not done
+    if not st.session_state.get("ops_suite_initialized"):
+        with st.spinner("Initializing operations suite..."):
+            init_results = init_ops_suite()
+            st.session_state["ops_suite_initialized"] = True
+            if init_results:
+                st.success("✅ Operations suite initialized")
+    
+    # Agent registry display
+    st.subheader("🤖 Registered Agents")
+    
+    for agent_name, agent_info in AGENT_REGISTRY.items():
+        with st.expander(f"{agent_info['profile_image']} {agent_name} - {agent_info['role']}"):
+            st.write(f"**Capabilities:** {', '.join(agent_info['core_capabilities'])}")
+            st.write(f"**Permission Level:** {agent_info['permissions_level']}")
+            st.write(f"**Status:** {agent_info['status']}")
+
+if __name__ == "__main__":
+    main()
