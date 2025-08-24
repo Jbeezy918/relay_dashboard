@@ -10,7 +10,15 @@ import os, re, json, time, shlex, subprocess, typing, requests, threading, fcntl
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
+
+# Handle streamlit-autorefresh import gracefully
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    # Fallback if streamlit-autorefresh isn't available
+    def st_autorefresh(interval=2000, key="refresh"):
+        if st.button("🔄 Refresh", key=key):
+            st.rerun()
 
 def _safe_dt(s):
     try:
@@ -3782,10 +3790,11 @@ def load_comm_log():
 
 def render_live_comms():
     """Render the Live Comms panel in Streamlit"""
-    st.subheader("📡 Live Agent Communications")
+    st.header("📡 Live Agent Communications")
+    st.markdown("*Real-time agent coordination and approvals*")
     
-    # Auto-refresh every 2 seconds
-    st_autorefresh(interval=2000, key="comms_refresh")
+    # Auto-refresh every 3 seconds (slightly slower for stability)
+    st_autorefresh(interval=3000, key="comms_refresh")
     
     # User chat interface
     st.markdown("### 💬 Chat with Agents")
@@ -3858,8 +3867,11 @@ def render_live_comms():
     # Sort by timestamp (newest first)
     filtered_messages.sort(key=lambda x: x.get("ts", ""), reverse=True)
     
+    # Display messages count
+    st.write(f"📊 **Showing {len(filtered_messages[:25])} of {len(messages)} total messages**")
+    
     # Display messages
-    for msg in filtered_messages[:20]:  # Show latest 20
+    for msg in filtered_messages[:25]:  # Show latest 25
         timestamp = msg.get("ts", "")[:19].replace("T", " ")
         sender = msg.get("sender", "Unknown")
         msg_type = msg.get("type", "status")
