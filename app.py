@@ -101,6 +101,48 @@ AGENT_REGISTRY = {
         "profile_image": "⚖️",
         "status": "registered",
         "activation_requirements": ["user_approval", "compliance_review"]
+    },
+    "Jenny": {
+        "name": "Jenny",
+        "role": "Communication Specialist",
+        "core_capabilities": [
+            "chat", "memory_logging", "voice_output", "speech_to_text",
+            "email_management", "customer_communication", "marketing_copy"
+        ],
+        "special_capabilities": [
+            "customer_followup", "email_campaigns", "content_writing",
+            "brand_voice", "messaging_strategy"
+        ],
+        "approved_tools": [
+            "email_api", "text_generator", "voice_synthesis", "calendar_sync"
+        ],
+        "permissions_level": "standard",
+        "linked_agents": ["Luna", "Lexi", "Bob the Builder"],
+        "memory_space": "jenny_memory",
+        "profile_image": "💬",
+        "status": "registered",
+        "activation_requirements": ["user_approval"]
+    },
+    "Luna": {
+        "name": "Luna",
+        "role": "Organization & Scheduling Specialist",
+        "core_capabilities": [
+            "chat", "memory_logging", "calendar_management", "task_scheduling",
+            "email_tracking", "reminder_system", "workflow_coordination"
+        ],
+        "special_capabilities": [
+            "meeting_coordination", "deadline_tracking", "project_management",
+            "time_optimization", "resource_allocation"
+        ],
+        "approved_tools": [
+            "calendar_api", "task_manager", "notification_system", "scheduling_engine"
+        ],
+        "permissions_level": "standard",
+        "linked_agents": ["Jenny", "Lexi", "Bob the Builder"],
+        "memory_space": "luna_memory",
+        "profile_image": "🌙",
+        "status": "registered",
+        "activation_requirements": ["user_approval"]
     }
 }
 
@@ -3745,6 +3787,46 @@ def render_live_comms():
     # Auto-refresh every 2 seconds
     st_autorefresh(interval=2000, key="comms_refresh")
     
+    # User chat interface
+    st.markdown("### 💬 Chat with Agents")
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        user_message = st.text_input(
+            "Send message to agents:",
+            placeholder="Type your message to the agent team...",
+            key="user_chat_input"
+        )
+    
+    with col2:
+        target_agent = st.selectbox(
+            "To:",
+            ["All Agents"] + list(AGENT_REGISTRY.keys()),
+            key="target_agent"
+        )
+    
+    if st.button("📤 Send", key="send_message") and user_message.strip():
+        recipients = ["All"] if target_agent == "All Agents" else [target_agent]
+        
+        # Log user message
+        log_event({
+            "sender": "User",
+            "recipients": recipients,
+            "type": "comment",
+            "topic": "Spark Launch",
+            "content": user_message,
+            "risk": "low",
+            "approvers": [],
+            "status": "sent"
+        })
+        
+        # Simulate agent responses based on message content
+        simulate_agent_responses(user_message, target_agent)
+        
+        st.success(f"✅ Message sent to {target_agent}")
+        # Clear input by rerunning
+        st.rerun()
+    
     # Filters
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -3880,6 +3962,168 @@ def start_spark_marketing_workflow():
         "status": "approved"
     })
 
+def simulate_agent_responses(user_message, target_agent):
+    """Simulate intelligent agent responses to user messages"""
+    import time
+    import random
+    
+    # Convert user message to lowercase for keyword detection
+    msg_lower = user_message.lower()
+    
+    # Define agent personalities and response patterns
+    agent_responses = {
+        "Jenny": {
+            "keywords": ["email", "marketing", "copy", "message", "campaign", "customer"],
+            "responses": [
+                "I can help craft the email campaign for Spark. Should we focus on acquisition or retention messaging?",
+                "The marketing copy looks strong. I'd suggest A/B testing different subject lines.",
+                "For customer communication, we should emphasize the ROI - drivers earning more money.",
+            ]
+        },
+        "Lexi": {
+            "keywords": ["social", "media", "post", "content", "viral", "tiktok", "instagram"],
+            "responses": [
+                "Love the social strategy! TikTok drivers will relate to this. Let me create some viral hooks.",
+                "The 7-day campaign timeline works perfectly. I can schedule posts for peak engagement.",
+                "User-generated content from real drivers will be our secret weapon here.",
+            ]
+        },
+        "Luna": {
+            "keywords": ["schedule", "time", "deadline", "organize", "plan", "calendar"],
+            "responses": [
+                "I've blocked time for the launch activities. Marketing assets review scheduled for 2pm.",
+                "The timeline is tight but achievable. I'll set up milestone reminders for the team.",
+                "Coordinating with Lexi on the social media calendar - posts will go live at optimal times.",
+            ]
+        },
+        "Bob the Builder": {
+            "keywords": ["technical", "code", "deploy", "build", "app", "feature", "bug"],
+            "responses": [
+                "Technical review complete. The Spark app architecture is solid for v1.0.",
+                "No issues with the current deployment. All systems green for launch.",
+                "I can add analytics tracking to measure conversion from marketing campaigns.",
+            ]
+        },
+        "Demo": {
+            "keywords": ["security", "risk", "safe", "privacy", "data", "protect"],
+            "responses": [
+                "Security audit complete. No vulnerabilities detected in marketing claims or data handling.",
+                "Privacy policy compliance verified. GDPR and CCPA requirements met.",
+                "All external links and tracking pixels have been security-reviewed and approved.",
+            ]
+        },
+        "Ava": {
+            "keywords": ["legal", "compliance", "terms", "policy", "claim", "verify"],
+            "responses": [
+                "Legal review of marketing materials complete. All claims are substantiated and compliant.",
+                "Terms of service have been updated to reflect new pricing tiers. No legal risks identified.",
+                "The testimonials and success metrics are properly disclosed and legally sound.",
+            ]
+        }
+    }
+    
+    # Default responses for general inquiries
+    default_responses = [
+        "I'm ready to assist with the Spark launch. What specific area needs attention?",
+        "The marketing materials look comprehensive. Happy to provide my expertise.",
+        "Great progress on the launch preparation. How can I contribute?",
+    ]
+    
+    # Determine which agents should respond
+    responding_agents = []
+    if target_agent == "All Agents":
+        # Select 2-3 random agents to respond
+        responding_agents = random.sample(list(AGENT_REGISTRY.keys()), random.randint(2, 3))
+    else:
+        responding_agents = [target_agent]
+    
+    # Generate responses
+    for agent_name in responding_agents:
+        if agent_name in agent_responses:
+            agent_config = agent_responses[agent_name]
+            
+            # Check if message contains agent's keywords
+            relevant_responses = []
+            for keyword in agent_config["keywords"]:
+                if keyword in msg_lower:
+                    relevant_responses = agent_config["responses"]
+                    break
+            
+            # Use relevant response or default
+            if relevant_responses:
+                response = random.choice(relevant_responses)
+            else:
+                response = random.choice(default_responses)
+        else:
+            response = random.choice(default_responses)
+        
+        # Determine risk level based on content
+        risk = "high" if any(word in msg_lower for word in ["price", "legal", "security", "privacy", "deploy"]) else "low"
+        
+        # Log agent response with slight delay for realism
+        time.sleep(0.1)
+        log_event({
+            "sender": agent_name,
+            "recipients": ["User"],
+            "type": "comment",
+            "topic": "Spark Launch", 
+            "content": response,
+            "risk": risk,
+            "approvers": [],
+            "status": "replied"
+        })
+
+def start_active_spark_discussion():
+    """Start an active agent discussion about Spark Launch"""
+    
+    # Jenny initiates marketing discussion
+    log_event({
+        "sender": "Jenny",
+        "recipients": ["Lexi", "Luna"],
+        "type": "proposal",
+        "topic": "Spark Launch",
+        "content": "I've reviewed the email campaign materials. Proposing we launch with the 'Track Every Trip, Maximize Every Dollar' messaging. It's punchy and benefit-focused.",
+        "risk": "low",
+        "approvers": [],
+        "status": "open"
+    })
+    
+    # Lexi responds with social media angle
+    log_event({
+        "sender": "Lexi", 
+        "recipients": ["Jenny", "Luna"],
+        "type": "comment",
+        "topic": "Spark Launch",
+        "content": "Love the messaging! For social, I'm thinking TikTok POV videos: 'When you finally know which hours actually make money'. Very relatable for drivers.",
+        "risk": "low",
+        "approvers": [],
+        "status": "open"
+    })
+    
+    # Demo raises security concerns
+    log_event({
+        "sender": "Demo",
+        "recipients": ["Bob the Builder", "Ava"],
+        "type": "comment",
+        "topic": "Spark Launch",
+        "content": "Security checkpoint: All marketing claims about earnings need verification. Can't promise specific income amounts without disclaimers.",
+        "risk": "high",
+        "approvers": [],
+        "status": "open"
+    })
+    
+    # Luna coordinates scheduling
+    log_event({
+        "sender": "Luna",
+        "recipients": ["Jenny", "Lexi"],
+        "type": "comment",
+        "topic": "Spark Launch",
+        "content": "Marketing timeline coordinated. Email blast scheduled for 9 AM EST, social posts at peak engagement times (12 PM, 6 PM, 9 PM).",
+        "risk": "low",
+        "approvers": [],
+        "status": "scheduled"
+    })
+
 # =========================
 # MAIN UI
 # =========================
@@ -3960,16 +4204,20 @@ def main():
     
     # Spark Marketing Workflow Controls
     st.markdown("---")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("🚀 Start Spark Marketing Workflow"):
+        if st.button("🚀 Start Marketing Workflow"):
             start_spark_marketing_workflow()
-            st.success("Marketing workflow initiated! Check Live Comms below.")
+            st.success("Marketing workflow initiated!")
     with col2:
+        if st.button("💬 Begin Agent Discussion"):
+            start_active_spark_discussion()
+            st.success("Agents are now actively discussing Spark Launch!")
+    with col3:
         if st.button("📊 Test High-Risk Proposal"):
             log_event({
                 "sender": "Demo",
-                "recipients": ["Bob", "Ava"],
+                "recipients": ["Bob the Builder", "Ava"],
                 "type": "proposal", 
                 "topic": "Spark Launch",
                 "content": "PROPOSAL: Increase Spark pricing to $15/month for Pro tier. Market research shows competitive pricing supports this.",
