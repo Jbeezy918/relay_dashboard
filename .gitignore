@@ -23,3 +23,6 @@ __pycache__/
 # SQLite/db
 *.db
 tasks.db
+
+# runtime logs
+agent_comm/relay_log.jsonl
