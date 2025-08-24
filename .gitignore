@@ -5,17 +5,21 @@ __pycache__/
 *.pyd
 *.egg-info/
 .eggs/
-
-# Virtual env
-.venv/
-
-# OS / Editors / Logs
-.DS_Store
 *.log
 
-# App data
+# Venv
+.venv/
+
+# macOS
+.DS_Store
+
+# Streamlit
 .streamlit/
+
+# Env
 .env
 .env.*
+
+# SQLite/db
 *.db
 tasks.db
